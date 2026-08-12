@@ -17,15 +17,42 @@ import sqlite3
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 
 SCRIPT_DIR = Path(__file__).parent
+
+
+def find_env_file(start: Path) -> Path | None:
+    """Walk up from `start` looking for a .env file, so this works no matter
+    how deep the script lives inside the repo (e.g. reporting/importers/)."""
+    for folder in [start, *start.parents]:
+        candidate = folder / ".env"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+# Load variables from a .env file found anywhere up the folder tree (if present).
+# System/User environment variables (if already set) take priority and won't be overridden.
+env_file = find_env_file(SCRIPT_DIR)
+if env_file:
+    load_dotenv(env_file)
+
 DB_PATH = os.environ.get("FINANCES_DB_PATH", str(SCRIPT_DIR / "finances.db"))
 
 
-# ---------- Adapters: raw CSV -> common shape (date, description, amount, account_id) ----------
+# ---------- Adapters: raw CSV/Excel -> common shape (date, description, amount, account_id) ----------
+
+def read_source_file(filepath: str, sep: str = ";") -> pd.DataFrame:
+    """Read a CSV or Excel file into a DataFrame, based on the file extension."""
+    ext = Path(filepath).suffix.lower()
+    if ext in (".xlsx", ".xls"):
+        return pd.read_excel(filepath)
+    return pd.read_csv(filepath, sep=sep)
+
 
 def load_meal_vouchers(filepath: str, account_id: int) -> pd.DataFrame:
-    df = pd.read_csv(filepath, sep=";")
+    df = read_source_file(filepath, sep=";")
     df = df.rename(columns={"Date": "date", "Details": "description", "Amount": "amount"})
 
     # "Date" includes a time component (dd/mm/yyyy hh:mm) - keep only the date part.
@@ -41,8 +68,8 @@ def load_meal_vouchers(filepath: str, account_id: int) -> pd.DataFrame:
 
 
 def load_bank_export(filepath: str, account_id: int) -> pd.DataFrame:
-    # Belfius export: ';' separators, plain dot decimals (e.g. -2.5), dd-mm-yyyy dates.
-    df = pd.read_csv(filepath, sep=";")
+    # Belfius/Argenta export: ';'-separated CSV or Excel, plain dot decimals (e.g. -2.5), dd-mm-yyyy dates.
+    df = read_source_file(filepath, sep=";")
     df["description"] = (
         df.get("Naam tegenpartij", pd.Series(dtype=str)).fillna("")
         + " - "
