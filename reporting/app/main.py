@@ -192,10 +192,14 @@ def list_transactions(request: Request, month: str | None = None):
                 categories.name COLLATE NOCASE
             """
         ).fetchall()
+        budget_total = conn.execute(
+            "SELECT SUM(limit_amount) FROM budgets WHERE month = ?",
+            (selected_month.strftime("%Y-%m"),),
+        ).fetchone()[0]
 
     income = sum(row["amount"] for row in rows if row["amount"] > 0)
     spending = -sum(row["amount"] for row in rows if row["amount"] < 0)
-    net = income - spending
+    budget_remaining = budget_total - spending if budget_total is not None else None
     uncategorized_count = sum(row["category_id"] is None for row in rows)
 
     return templates.TemplateResponse(
@@ -211,7 +215,8 @@ def list_transactions(request: Request, month: str | None = None):
             "current_month": date.today().strftime("%Y-%m"),
             "income": income,
             "spending": spending,
-            "net": net,
+            "budget_total": budget_total,
+            "budget_remaining": budget_remaining,
             "uncategorized_count": uncategorized_count,
         },
     )

@@ -62,6 +62,7 @@
         font-weight: 650;
         font-variant-numeric: tabular-nums;
     }
+    .summary-card .detail { margin-top: 0.25rem; color: var(--muted); font-size: 0.75rem; }
     .summary-card.income .value { color: var(--income); }
     .summary-card.spending .value { color: var(--expense); }
     .summary-card.attention { border-color: #f6d68a; background: #fffbeb; }
@@ -136,9 +137,15 @@
         <div class="label">Spent</div>
         <div class="value">{{ "%.2f"|format(spending) }} &euro;</div>
     </div>
-    <div class="summary-card {{ 'income' if net >= 0 else 'spending' }}">
-        <div class="label">Net balance</div>
-        <div class="value">{{ "%.2f"|format(net) }} &euro;</div>
+    <div class="summary-card {{ 'income' if budget_remaining is not none and budget_remaining >= 0 else 'spending' if budget_remaining is not none else '' }}">
+        <div class="label">Budget remaining</div>
+        {% if budget_remaining is not none %}
+        <div class="value">{{ "%.2f"|format(budget_remaining) }} &euro;</div>
+        <div class="detail">of {{ "%.2f"|format(budget_total) }} &euro;</div>
+        {% else %}
+        <div class="value">Not set</div>
+        <div class="detail">No budget for this month</div>
+        {% endif %}
     </div>
     <div class="summary-card {{ 'attention' if uncategorized_count else '' }}" id="uncategorized-card">
         <div class="label">Needs category</div>
