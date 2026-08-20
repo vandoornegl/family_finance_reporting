@@ -2,18 +2,153 @@
 {% block title %}Transactions - Family Finances{% endblock %}
 {% block head %}
 <style>
+    .month-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .month-toolbar form { margin: 0; }
+    .month-picker {
+        min-height: 38px;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        font: inherit;
+        font-weight: 600;
+    }
+    .month-nav {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 1.25rem;
+    }
+    .month-nav:hover { background: #f5f5f5; }
+    .current-month {
+        color: var(--primary);
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.9rem;
+        margin-bottom: 2rem;
+    }
+    .summary-card {
+        padding: 1rem 1.1rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+    }
+    .summary-card .label {
+        color: var(--muted);
+        font-size: 0.76rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+    .summary-card .value {
+        margin-top: 0.35rem;
+        font-size: 1.35rem;
+        font-weight: 650;
+        font-variant-numeric: tabular-nums;
+    }
+    .summary-card.income .value { color: var(--income); }
+    .summary-card.spending .value { color: var(--expense); }
+    .summary-card.attention { border-color: #f6d68a; background: #fffbeb; }
+    .transactions-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.75rem;
+    }
+    .transactions-heading h2 { margin: 0; font-size: 1rem; }
+    .date-cell { white-space: nowrap; }
+    .date-day { font-weight: 600; }
+    .date-year { display: block; margin-top: 0.15rem; color: var(--muted); font-size: 0.75rem; }
     td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
     td.amount.negative { color: var(--expense); }
     td.amount.positive { color: var(--income); }
-    td.category, td.account { color: var(--muted); }
+    td.account { color: var(--muted); }
+    .category-select {
+        min-width: 150px;
+        padding: 0.4rem 1.8rem 0.4rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--card);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.85rem;
+    }
+    .category-select:disabled { opacity: 0.6; cursor: wait; }
+    .category-select.save-error { border-color: var(--expense); }
+    @media (max-width: 760px) {
+        .page-header { align-items: flex-start; flex-direction: column; }
+        .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 430px) {
+        .summary-grid { grid-template-columns: 1fr; }
+        .current-month { display: none; }
+    }
 </style>
 {% endblock %}
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>Transactions</h1>
-        <p class="summary">{{ transactions|length }} transaction(s)</p>
+        <h1>{{ month_label }}</h1>
+        <p class="summary">Monthly transaction overview</p>
     </div>
+    <div class="month-toolbar">
+        <a class="month-nav" href="/transactions?month={{ previous_month }}" aria-label="Previous month">&lsaquo;</a>
+        <form method="get" action="/transactions">
+            <input
+                class="month-picker"
+                type="month"
+                name="month"
+                value="{{ selected_month }}"
+                aria-label="Select month"
+                onchange="this.form.submit()"
+            >
+        </form>
+        <a class="month-nav" href="/transactions?month={{ next_month }}" aria-label="Next month">&rsaquo;</a>
+        {% if selected_month != current_month %}
+        <a class="current-month" href="/transactions">Today</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="summary-grid" aria-label="Monthly summary">
+    <div class="summary-card income">
+        <div class="label">Income</div>
+        <div class="value">{{ "%.2f"|format(income) }} &euro;</div>
+    </div>
+    <div class="summary-card spending">
+        <div class="label">Spent</div>
+        <div class="value">{{ "%.2f"|format(spending) }} &euro;</div>
+    </div>
+    <div class="summary-card {{ 'income' if balance >= 0 else 'spending' }}">
+        <div class="label">Balance</div>
+        <div class="value">{{ "%.2f"|format(balance) }} &euro;</div>
+    </div>
+    <div class="summary-card {{ 'attention' if uncategorized_count else '' }}" id="uncategorized-card">
+        <div class="label">Needs category</div>
+        <div class="value" id="uncategorized-count">{{ uncategorized_count }}</div>
+    </div>
+</section>
+
+<div class="transactions-heading">
+    <h2>Transactions</h2>
+    <span class="summary">{{ transactions|length }} transaction(s)</span>
 </div>
 
 {% if transactions %}
@@ -31,10 +166,30 @@
         <tbody>
             {% for t in transactions %}
             <tr>
-                <td>{{ t["date"] }}</td>
+                <td class="date-cell">
+                    <span class="date-day">{{ t["date"][8:10] }}/{{ t["date"][5:7] }}</span>
+                    <span class="date-year">{{ t["date"][0:4] }}</span>
+                </td>
                 <td>{{ t["description"] }}</td>
                 <td class="account">{{ t["account_name"] or "-" }}</td>
-                <td class="category">{{ t["category_name"] or "Uncategorized" }}</td>
+                <td>
+                    <select
+                        class="category-select"
+                        data-transaction-id="{{ t['id'] }}"
+                        data-previous-value="{{ t['category_id'] or '' }}"
+                        aria-label="Category for {{ t['description'] }}"
+                    >
+                        <option value="" {{ "selected" if t["category_id"] is none else "" }}>Uncategorized</option>
+                        {% for category in categories %}
+                        <option
+                            value="{{ category['id'] }}"
+                            {{ "selected" if category["id"] == t["category_id"] else "" }}
+                        >
+                            {{ (category["parent_name"] ~ " / ") if category["parent_name"] else "" }}{{ category["name"] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </td>
                 <td class="amount {{ 'negative' if t['amount'] < 0 else 'positive' }}">
                     {{ "%.2f"|format(t["amount"]) }} &euro;
                 </td>
@@ -44,6 +199,46 @@
     </table>
 </div>
 {% else %}
-<div class="empty">No transactions yet. Run the importer to load some.</div>
+<div class="empty">No transactions found for {{ month_label }}.</div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+    document.querySelectorAll(".category-select").forEach((select) => {
+        select.addEventListener("change", async () => {
+            const previousValue = select.dataset.previousValue;
+            select.disabled = true;
+            select.classList.remove("save-error");
+
+            const response = await fetch(
+                `/api/transactions/${select.dataset.transactionId}/category`,
+                {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        category_id: select.value ? Number(select.value) : null,
+                    }),
+                },
+            );
+
+            select.disabled = false;
+            if (response.ok) {
+                const count = document.querySelector("#uncategorized-count");
+                if (!previousValue && select.value) count.textContent = Number(count.textContent) - 1;
+                if (previousValue && !select.value) count.textContent = Number(count.textContent) + 1;
+                document.querySelector("#uncategorized-card").classList.toggle(
+                    "attention",
+                    Number(count.textContent) > 0,
+                );
+                select.dataset.previousValue = select.value;
+                return;
+            }
+
+            const body = await response.json().catch(() => null);
+            select.value = previousValue;
+            select.classList.add("save-error");
+            alert(body?.detail ?? "Could not update the transaction category.");
+        });
+    });
+</script>
 {% endblock %}
