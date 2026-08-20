@@ -106,6 +106,7 @@
     <nav>
         <a href="/transactions" class="{{ 'active' if request.url.path == '/transactions' else '' }}">Transactions</a>
         <a href="/accounts" class="{{ 'active' if request.url.path == '/accounts' else '' }}">Accounts</a>
+        <a href="/categories" class="{{ 'active' if request.url.path == '/categories' else '' }}">Categories</a>
     </nav>
     <main>{% block content %}{% endblock %}</main>
     {% block scripts %}{% endblock %}

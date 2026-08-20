@@ -21,3 +21,6 @@ meal-voucher accounts. Accounts with imported history cannot be deleted.
 
 Open `http://localhost:8000/transactions` to review transactions and assign
 categories.
+
+Open `http://localhost:8000/categories` to create, edit, organize, and delete
+categories.

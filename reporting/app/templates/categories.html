@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Categories - Family Finances{% endblock %}
+{% block head %}
+<style>
+    td.number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    td.muted { color: var(--muted); }
+    .actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+    dialog {
+        width: min(440px, calc(100% - 2rem));
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+    }
+    dialog::backdrop { background: rgba(31, 36, 48, 0.4); }
+    form { padding: 1.4rem; }
+    form h2 { margin: 0 0 1.25rem; font-size: 1.15rem; }
+    label { display: block; margin-bottom: 1rem; font-size: 0.85rem; font-weight: 600; }
+    input, select {
+        display: block;
+        width: 100%;
+        margin-top: 0.35rem;
+        padding: 0.6rem 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: white;
+        color: var(--ink);
+        font: inherit;
+    }
+    .form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.4rem; }
+    .error {
+        display: none;
+        margin-bottom: 1rem;
+        padding: 0.7rem;
+        border-radius: 6px;
+        background: #fef2f2;
+        color: var(--expense);
+        font-size: 0.85rem;
+    }
+    .error.visible { display: block; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Categories</h1>
+        <p class="summary">
+            {{ categories|length }} {{ "category" if categories|length == 1 else "categories" }}
+        </p>
+    </div>
+    <button type="button" class="primary" id="add-category">Add category</button>
+</div>
+
+{% if categories %}
+<div class="table-wrap">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Parent</th>
+                <th style="text-align:right;">Transactions</th>
+                <th style="text-align:right;">Children</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr>
+                <td>{{ category["name"] }}</td>
+                <td class="muted">{{ category["parent_name"] or "-" }}</td>
+                <td class="number">{{ category["transaction_count"] }}</td>
+                <td class="number">{{ category["child_count"] }}</td>
+                <td class="actions">
+                    <button
+                        type="button"
+                        class="edit-category"
+                        data-id="{{ category['id'] }}"
+                        data-name="{{ category['name'] }}"
+                        data-parent-id="{{ category['parent_id'] or '' }}"
+                    >Edit</button>
+                    <button
+                        type="button"
+                        class="danger delete-category"
+                        data-id="{{ category['id'] }}"
+                        data-name="{{ category['name'] }}"
+                    >Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty">No categories yet. Add one to start organizing transactions.</div>
+{% endif %}
+
+<dialog id="category-dialog">
+    <form id="category-form">
+        <h2 id="dialog-title">Add category</h2>
+        <div class="error" id="form-error" role="alert"></div>
+        <input type="hidden" id="category-id">
+        <label>
+            Name
+            <input id="category-name" maxlength="100" required autofocus>
+        </label>
+        <label>
+            Parent category
+            <select id="category-parent">
+                <option value="">None</option>
+                {% for category in categories %}
+                <option value="{{ category['id'] }}">{{ category["name"] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="form-actions">
+            <button type="button" id="cancel-category">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+    const dialog = document.querySelector("#category-dialog");
+    const form = document.querySelector("#category-form");
+    const errorBox = document.querySelector("#form-error");
+    const idInput = document.querySelector("#category-id");
+    const nameInput = document.querySelector("#category-name");
+    const parentInput = document.querySelector("#category-parent");
+
+    function showForm(category = null) {
+        idInput.value = category?.id ?? "";
+        nameInput.value = category?.name ?? "";
+        parentInput.value = category?.parentId ?? "";
+        Array.from(parentInput.options).forEach((option) => {
+            option.disabled = Boolean(category && option.value === category.id);
+        });
+        document.querySelector("#dialog-title").textContent = category ? "Edit category" : "Add category";
+        errorBox.classList.remove("visible");
+        errorBox.textContent = "";
+        dialog.showModal();
+        nameInput.focus();
+    }
+
+    async function readError(response) {
+        const body = await response.json().catch(() => null);
+        if (typeof body?.detail === "string") return body.detail;
+        if (Array.isArray(body?.detail)) return body.detail[0]?.msg ?? "Invalid category details.";
+        return "Could not save the category.";
+    }
+
+    document.querySelector("#add-category").addEventListener("click", () => showForm());
+    document.querySelector("#cancel-category").addEventListener("click", () => dialog.close());
+
+    document.querySelectorAll(".edit-category").forEach((button) => {
+        button.addEventListener("click", () => showForm(button.dataset));
+    });
+
+    document.querySelectorAll(".delete-category").forEach((button) => {
+        button.addEventListener("click", async () => {
+            if (!confirm(`Delete "${button.dataset.name}"?`)) return;
+            const response = await fetch(`/api/categories/${button.dataset.id}`, { method: "DELETE" });
+            if (response.ok) {
+                window.location.reload();
+                return;
+            }
+            alert(await readError(response));
+        });
+    });
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const id = idInput.value;
+        const response = await fetch(id ? `/api/categories/${id}` : "/api/categories", {
+            method: id ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name: nameInput.value,
+                parent_id: parentInput.value ? Number(parentInput.value) : null,
+            }),
+        });
+        if (response.ok) {
+            window.location.reload();
+            return;
+        }
+        errorBox.textContent = await readError(response);
+        errorBox.classList.add("visible");
+    });
+</script>
+{% endblock %}
