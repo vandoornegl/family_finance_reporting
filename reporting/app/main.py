@@ -10,6 +10,7 @@ Then open http://localhost:8000/transactions in your browser.
 import os
 import sqlite3
 from contextlib import closing
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -140,7 +141,24 @@ def validate_category(
 
 
 @app.get("/transactions")
-def list_transactions(request: Request):
+def list_transactions(request: Request, month: str | None = None):
+    if month is None:
+        selected_month = date.today().replace(day=1)
+    else:
+        try:
+            year_text, month_text = month.split("-")
+            if len(year_text) != 4 or len(month_text) != 2:
+                raise ValueError
+            selected_month = date(int(year_text), int(month_text), 1)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail="Month must use the YYYY-MM format.",
+            ) from None
+
+    next_month = (selected_month.replace(day=28) + timedelta(days=4)).replace(day=1)
+    previous_month = (selected_month - timedelta(days=1)).replace(day=1)
+
     with closing(get_connection()) as conn:
         rows = conn.execute(
             """
@@ -155,8 +173,10 @@ def list_transactions(request: Request):
             FROM transactions
             LEFT JOIN accounts ON accounts.id = transactions.account_id
             LEFT JOIN categories ON categories.id = transactions.category_id
+            WHERE transactions.date >= ? AND transactions.date < ?
             ORDER BY transactions.date DESC, transactions.id DESC
-            """
+            """,
+            (selected_month.isoformat(), next_month.isoformat()),
         ).fetchall()
         categories = conn.execute(
             """
@@ -173,10 +193,27 @@ def list_transactions(request: Request):
             """
         ).fetchall()
 
+    income = sum(row["amount"] for row in rows if row["amount"] > 0)
+    spending = -sum(row["amount"] for row in rows if row["amount"] < 0)
+    net = income - spending
+    uncategorized_count = sum(row["category_id"] is None for row in rows)
+
     return templates.TemplateResponse(
         request,
         "transactions.html",
-        {"transactions": rows, "categories": categories},
+        {
+            "transactions": rows,
+            "categories": categories,
+            "selected_month": selected_month.strftime("%Y-%m"),
+            "month_label": selected_month.strftime("%B %Y"),
+            "previous_month": previous_month.strftime("%Y-%m"),
+            "next_month": next_month.strftime("%Y-%m"),
+            "current_month": date.today().strftime("%Y-%m"),
+            "income": income,
+            "spending": spending,
+            "net": net,
+            "uncategorized_count": uncategorized_count,
+        },
     )
 
 
