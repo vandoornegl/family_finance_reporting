@@ -12,7 +12,7 @@ CREATE TABLE accounts (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,              -- "Chase Checking", "Amex Card"
     institution TEXT,                -- "Chase", "Amex" — used to pick the right CSV parser
-    account_type TEXT NOT NULL,      -- 'checking', 'savings', 'credit_card'
+    account_type TEXT NOT NULL,      -- 'checking', 'savings', 'credit_card', 'meal_voucher'
     created_at TEXT DEFAULT (datetime('now'))
 );
 
