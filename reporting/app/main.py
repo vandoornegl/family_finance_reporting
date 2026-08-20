@@ -69,6 +69,10 @@ class AccountPayload(BaseModel):
         return value.strip() or None
 
 
+class TransactionCategoryPayload(BaseModel):
+    category_id: int | None
+
+
 @app.get("/transactions")
 def list_transactions(request: Request):
     with closing(get_connection()) as conn:
@@ -79,6 +83,7 @@ def list_transactions(request: Request):
                 transactions.date,
                 transactions.description,
                 transactions.amount,
+                transactions.category_id,
                 accounts.name AS account_name,
                 categories.name AS category_name
             FROM transactions
@@ -87,12 +92,48 @@ def list_transactions(request: Request):
             ORDER BY transactions.date DESC, transactions.id DESC
             """
         ).fetchall()
+        categories = conn.execute(
+            """
+            SELECT
+                categories.id,
+                categories.name,
+                parents.name AS parent_name
+            FROM categories
+            LEFT JOIN categories AS parents ON parents.id = categories.parent_id
+            ORDER BY
+                COALESCE(parents.name, categories.name) COLLATE NOCASE,
+                parents.name IS NULL DESC,
+                categories.name COLLATE NOCASE
+            """
+        ).fetchall()
 
     return templates.TemplateResponse(
         request,
         "transactions.html",
-        {"transactions": rows},
+        {"transactions": rows, "categories": categories},
     )
+
+
+@app.patch("/api/transactions/{transaction_id}/category")
+def update_transaction_category(transaction_id: int, payload: TransactionCategoryPayload):
+    with closing(get_connection()) as conn:
+        with conn:
+            if payload.category_id is not None:
+                category_exists = conn.execute(
+                    "SELECT 1 FROM categories WHERE id = ?",
+                    (payload.category_id,),
+                ).fetchone()
+                if category_exists is None:
+                    raise HTTPException(status_code=400, detail="Category not found")
+
+            cursor = conn.execute(
+                "UPDATE transactions SET category_id = ? WHERE id = ?",
+                (payload.category_id, transaction_id),
+            )
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Transaction not found")
+
+    return {"id": transaction_id, "category_id": payload.category_id}
 
 
 @app.get("/accounts")

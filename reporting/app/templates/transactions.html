@@ -5,7 +5,19 @@
     td.amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
     td.amount.negative { color: var(--expense); }
     td.amount.positive { color: var(--income); }
-    td.category, td.account { color: var(--muted); }
+    td.account { color: var(--muted); }
+    .category-select {
+        min-width: 150px;
+        padding: 0.4rem 1.8rem 0.4rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--card);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.85rem;
+    }
+    .category-select:disabled { opacity: 0.6; cursor: wait; }
+    .category-select.save-error { border-color: var(--expense); }
 </style>
 {% endblock %}
 {% block content %}
@@ -34,7 +46,24 @@
                 <td>{{ t["date"] }}</td>
                 <td>{{ t["description"] }}</td>
                 <td class="account">{{ t["account_name"] or "-" }}</td>
-                <td class="category">{{ t["category_name"] or "Uncategorized" }}</td>
+                <td>
+                    <select
+                        class="category-select"
+                        data-transaction-id="{{ t['id'] }}"
+                        data-previous-value="{{ t['category_id'] or '' }}"
+                        aria-label="Category for {{ t['description'] }}"
+                    >
+                        <option value="" {{ "selected" if t["category_id"] is none else "" }}>Uncategorized</option>
+                        {% for category in categories %}
+                        <option
+                            value="{{ category['id'] }}"
+                            {{ "selected" if category["id"] == t["category_id"] else "" }}
+                        >
+                            {{ (category["parent_name"] ~ " / ") if category["parent_name"] else "" }}{{ category["name"] }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </td>
                 <td class="amount {{ 'negative' if t['amount'] < 0 else 'positive' }}">
                     {{ "%.2f"|format(t["amount"]) }} &euro;
                 </td>
@@ -46,4 +75,37 @@
 {% else %}
 <div class="empty">No transactions yet. Run the importer to load some.</div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+    document.querySelectorAll(".category-select").forEach((select) => {
+        select.addEventListener("change", async () => {
+            const previousValue = select.dataset.previousValue;
+            select.disabled = true;
+            select.classList.remove("save-error");
+
+            const response = await fetch(
+                `/api/transactions/${select.dataset.transactionId}/category`,
+                {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        category_id: select.value ? Number(select.value) : null,
+                    }),
+                },
+            );
+
+            select.disabled = false;
+            if (response.ok) {
+                select.dataset.previousValue = select.value;
+                return;
+            }
+
+            const body = await response.json().catch(() => null);
+            select.value = previousValue;
+            select.classList.add("save-error");
+            alert(body?.detail ?? "Could not update the transaction category.");
+        });
+    });
+</script>
 {% endblock %}
